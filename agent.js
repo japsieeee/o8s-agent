@@ -127,20 +127,40 @@ function collectMetrics() {
 function startAgent() {
   const config = loadConfig();
 
-  const socket = new WebSocket(config.backendUrl, {
-    headers: { Authorization: `Bearer ${config.apiKey}` },
-  });
+  function connect() {
+    console.log("🔌 Trying to connect to backend...");
 
-  socket.on("open", () => {
-    console.log("✅ Agent connected to backend");
-    setInterval(() => {
-      const metrics = collectMetrics();
-      socket.send(JSON.stringify({ type: "metrics", data: metrics }));
-    }, config.interval * 1000);
-  });
+    const socket = new WebSocket(config.backendUrl, {
+      headers: { Authorization: `Bearer ${config.apiKey}` },
+    });
 
-  socket.on("close", () => console.log("⚠️ Connection closed"));
-  socket.on("error", (err) => console.error("❌ Socket error:", err.message));
+    let metricsInterval;
+
+    socket.on("open", () => {
+      console.log("✅ Connected to backend");
+
+      metricsInterval = setInterval(() => {
+        if (socket.readyState === WebSocket.OPEN) {
+          const metrics = collectMetrics();
+          socket.send(JSON.stringify({ type: "metrics", data: metrics }));
+        }
+      }, config.interval * 1000);
+    });
+
+    socket.on("close", () => {
+      console.log("⚠️ Backend unavailable, retrying...");
+      clearInterval(metricsInterval);
+      setTimeout(connect, 5000); // retry every 5s
+    });
+
+    socket.on("error", (err) => {
+      console.error("❌ Socket error:", err.message);
+      clearInterval(metricsInterval);
+      socket.close(); // triggers "close" → retry
+    });
+  }
+
+  connect();
 }
 
 startAgent();
