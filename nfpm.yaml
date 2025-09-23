@@ -1,0 +1,75 @@
+# This is an example nfpm configuration file.
+# Make sure to check the documentation at https://nfpm.goreleaser.com
+#
+# The lines below are called `modelines`. See `:help modeline`
+# Feel free to remove those if you don't want/need to use them.
+# yaml-language-server: $schema=https://nfpm.goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+
+name: "jp-monitoring-agent"
+arch: "amd64"
+platform: "linux"
+version: "1.0.0"
+section: "utils"
+priority: "extra"
+
+replaces:
+  - old-monitoring-agent
+
+provides:
+  - monitoring-agent
+
+depends:
+  - nodejs
+  - redis-tools
+  - procps
+  - coreutils
+  - util-linux
+
+recommends:
+  - htop
+  - iotop
+
+suggests:
+  - net-tools
+
+conflicts:
+  - other-monitoring-agent
+
+maintainer: "Jp Japos <johnlloydjapos@protonmail.com>"
+description: |
+  JP Monitoring Agent - lightweight system monitoring agent.
+    Collects CPU, memory, storage, processes, and network metrics
+    and sends them securely to the JP Monitoring backend in real time.
+
+vendor: "Jp Monitoring"
+homepage: "https://deb-packages.jpjapos.com"
+license: "MIT"
+changelog: "changelog.yml"
+
+contents:
+  - src: ./dist/jp-monitoring-agent
+    dst: /usr/lib/jp-monitoring-agent/jp-monitoring-agent
+    type: ""
+  - src: ./LICENSE
+    dst: /usr/share/doc/jp-monitoring-agent/LICENSE
+    type: config
+  - src: ./jp-monitoring-agent.service
+    dst: /usr/lib/systemd/system/jp-monitoring-agent.service
+    type: ""
+
+# Optional symlink if you want a shorter command
+#  - src: /usr/bin/jp-monitoring-agent
+#    dst: /usr/bin/jpagent
+#    type: symlink
+
+overrides:
+  deb:
+    scripts:
+      postinstall: ./scripts/postinstall.sh
+      preremove: ./scripts/preremove.sh
+      postremove: ./scripts/postremove.sh
+  rpm:
+    scripts:
+      preinstall: ./scripts/preinstall.sh
+      postremove: ./scripts/postremove.sh

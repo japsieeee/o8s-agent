@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "js-yaml": "4.1.0",
+    "ws": "8.18.3"
+  },
+  "scripts": {
+    "build": "npx pkg agent.js --target node18-linux-x64 --output ./dist/jp-monitoring-agent"
+  }
+}
