@@ -1,12 +1,8 @@
-# This is an example nfpm configuration file.
-# Make sure to check the documentation at https://nfpm.goreleaser.com
-#
-# The lines below are called `modelines`. See `:help modeline`
-# Feel free to remove those if you don't want/need to use them.
-# yaml-language-server: $schema=https://nfpm.goreleaser.com/static/schema.json
+# nfpm configuration for o8s-agent
+# https://nfpm.goreleaser.com
 # vim: set ts=2 sw=2 tw=0 fo=cnqoj
 
-name: "jp-monitoring-agent"
+name: "o8s-agent"
 arch: "amd64"
 platform: "linux"
 version: "1.0.0"
@@ -14,14 +10,13 @@ section: "utils"
 priority: "extra"
 
 replaces:
-  - old-monitoring-agent
+  - old-o8s-agent
 
 provides:
-  - monitoring-agent
+  - o8s-agent
 
 depends:
   - nodejs
-  - redis-tools
   - procps
   - coreutils
   - util-linux
@@ -34,34 +29,41 @@ suggests:
   - net-tools
 
 conflicts:
-  - other-monitoring-agent
+  - other-o8s-agent
 
 maintainer: "Jp Japos <johnlloydjapos@protonmail.com>"
 description: |
-  JP Monitoring Agent - lightweight system monitoring agent.
-    Collects CPU, memory, storage, processes, and network metrics
-    and sends them securely to the JP Monitoring backend in real time.
+  o8s agent service - lightweight server operations agent.
+  Collects CPU, memory, storage, processes, and network metrics
+  and sends them securely to the o8s server in real time.
 
-vendor: "Jp Monitoring"
+vendor: "o8s-agent"
 homepage: "https://deb-packages.jpjapos.com"
 license: "MIT"
 changelog: "changelog.yml"
 
 contents:
-  - src: ./dist/jp-monitoring-agent
-    dst: /usr/lib/jp-monitoring-agent/jp-monitoring-agent
-    type: ""
-  - src: ./LICENSE
-    dst: /usr/share/doc/jp-monitoring-agent/LICENSE
-    type: config
-  - src: ./jp-monitoring-agent.service
-    dst: /usr/lib/systemd/system/jp-monitoring-agent.service
-    type: ""
+  # Binary in app folder
+  - src: ./dist/o8s-agent
+    dst: /usr/lib/o8s-agent/o8s-agent
 
-# Optional symlink if you want a shorter command
-#  - src: /usr/bin/jp-monitoring-agent
-#    dst: /usr/bin/jpagent
-#    type: symlink
+  # Symlink so it's executable from $PATH
+  - src: /usr/lib/o8s-agent/o8s-agent
+    dst: /usr/bin/o8s-agent
+    type: symlink
+
+  # License and documentation
+  - src: ./LICENSE
+    dst: /usr/share/doc/o8s-agent/LICENSE
+
+  # Systemd service unit
+  - src: ./o8s-agent.service
+    dst: /lib/systemd/system/o8s-agent.service
+
+  # Optional symlink for short command (if you want)
+  # - src: /usr/bin/o8s-agent
+  #   dst: /usr/bin/agent
+  #   type: symlink
 
 overrides:
   deb:

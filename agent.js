@@ -6,20 +6,20 @@ const fs = require("fs");
 const yaml = require("js-yaml");
 const WebSocket = require("ws");
 
+const serviceName = 'o8s-agent'
+
 // ---------------- CONFIG ----------------
-function loadConfig(configPath = "/etc/jp-monitoring-agent/config.yml") {
+function loadConfig(configPath = `/etc/${serviceName}/config.yml`) {
   try {
     const file = fs.readFileSync(configPath, "utf8");
     const data = yaml.load(file) || {};
 
-    if (!data.apiKey) {
-      throw new Error("Config missing required fields: apiKey, backendUrl");
-    }
-
     return {
-      apiKey: data.apiKey,
-      backendUrl: "ws://localhost:26312",
-      interval: data.interval || 10,
+      wsConnectionUrl: 'ws://192.168.68.72:26313',
+      wsToken: '4590C6C6E42961448642F5E619',
+      agentId: data.agentId || '',
+      clusterId: data.clusterId || '',
+      interval: data.interval || 30,
     };
   } catch (err) {
     console.error("❌ Failed to load config:", err.message);
@@ -128,10 +128,14 @@ function startAgent() {
   const config = loadConfig();
 
   function connect() {
-    console.log("🔌 Trying to connect to backend...");
+    console.log("🔌 Trying to connect to o8s backend...");
 
-    const socket = new WebSocket(config.backendUrl, {
-      headers: { Authorization: `Bearer ${config.apiKey}` },
+    const socket = new WebSocket(config.wsConnectionUrl, {
+      headers: { 
+        wsToken: config.wsToken,
+        agentId: config.agentId,
+        clusterId: config.clusterId
+      },
     });
 
     let metricsInterval;

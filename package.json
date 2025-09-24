@@ -4,6 +4,6 @@
     "ws": "8.18.3"
   },
   "scripts": {
-    "build": "npx pkg agent.js --target node18-linux-x64 --output ./dist/jp-monitoring-agent"
+    "build": "npx pkg agent.js --target node18-linux-x64 --output ./dist/o8s-agent"
   }
 }
