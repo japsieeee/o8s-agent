@@ -128,7 +128,7 @@ function startAgent() {
   const config = loadConfig();
 
   function connect() {
-    console.log("🔌 Trying to connect to o8s backend...");
+    console.log("🔌 Trying to connect to o8s server...");
 
     const socket = new WebSocket(config.wsConnectionUrl, {
       headers: { 
@@ -141,7 +141,7 @@ function startAgent() {
     let metricsInterval;
 
     socket.on("open", () => {
-      console.log("✅ Connected to backend");
+      console.log("✅ connected to o8s server");
 
       metricsInterval = setInterval(() => {
         if (socket.readyState === WebSocket.OPEN) {
@@ -152,13 +152,13 @@ function startAgent() {
     });
 
     socket.on("close", () => {
-      console.log("⚠️ Backend unavailable, retrying...");
+      console.log("⚠️ o8s server is unavailable, retrying...");
       clearInterval(metricsInterval);
       setTimeout(connect, 5000); // retry every 5s
     });
 
     socket.on("error", (err) => {
-      console.error("❌ Socket error:", err.message);
+      console.error("❌ socket error:", err.message);
       clearInterval(metricsInterval);
       socket.close(); // triggers "close" → retry
     });
