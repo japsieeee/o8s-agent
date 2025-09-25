@@ -9,8 +9,8 @@ mkdir -p "$(dirname "$CONFIG_FILE")"
 
 if [ ! -f "$CONFIG_FILE" ]; then
     cat <<EOF > "$CONFIG_FILE"
-clusterId: <PUT_YOUR_CLUSTER_ID_HERE>
-agentId: <PUT_YOUR_AGENT_ID_HERE>
+clusterId:
+agentId:
 interval: 30
 EOF
     echo "✅ Default config created at $CONFIG_FILE"

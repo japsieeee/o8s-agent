@@ -1,25 +1,28 @@
 #!/usr/bin/env node
 
 const os = require("os");
-const { execSync } = require("child_process");
-const fs = require("fs");
+const fs = require("fs/promises");
+const { exec } = require("child_process");
 const yaml = require("js-yaml");
-const WebSocket = require("ws");
+const { io } = require("socket.io-client");
+const util = require("util");
 
-const serviceName = 'o8s-agent'
+const execAsync = util.promisify(exec);
+
+const serviceName = "o8s-agent";
 
 // ---------------- CONFIG ----------------
-function loadConfig(configPath = `/etc/${serviceName}/config.yml`) {
+async function loadConfig(configPath = `/etc/${serviceName}/config.yml`) {
   try {
-    const file = fs.readFileSync(configPath, "utf8");
+    const file = await fs.readFile(configPath, "utf8");
     const data = yaml.load(file) || {};
 
     return {
-      wsConnectionUrl: 'ws://192.168.68.72:26313',
-      wsToken: '4590C6C6E42961448642F5E619',
-      agentId: data.agentId || '',
-      clusterId: data.clusterId || '',
-      interval: data.interval || 30,
+      wsConnectionUrl: "http://192.168.68.72:26313",
+      wsToken: "4590C6C6E42961448642F5E619",
+      agentId: data.agentId || "",
+      clusterId: data.clusterId || "",
+      interval: data.interval || 30, // seconds
     };
   } catch (err) {
     console.error("❌ Failed to load config:", err.message);
@@ -35,28 +38,20 @@ function getMemoryUsage() {
   return { total, free, used, usedPercent: Math.round((used / total) * 100) };
 }
 
-function getRedisMemory() {
+async function getStorageUsage() {
   try {
-    const output = execSync("redis-cli info memory | grep used_memory_human", {
-      encoding: "utf-8",
-    });
-    return output.trim();
-  } catch {
-    return undefined;
-  }
-}
-
-function getStorageUsage() {
-  try {
-    const output = execSync("df -h --output=source,size,used,avail,pcent,target", {
-      encoding: "utf-8",
-    });
-    const lines = output.trim().split("\n").slice(1);
-    return lines.map((line) => {
-      const [filesystem, size, used, avail, usedPercent, mount] =
-        line.trim().split(/\s+/);
-      return { filesystem, size, used, avail, usedPercent, mount };
-    });
+    const { stdout } = await execAsync(
+      "df -h --output=source,size,used,avail,pcent,target"
+    );
+    return stdout
+      .trim()
+      .split("\n")
+      .slice(1)
+      .map((line) => {
+        const [filesystem, size, used, avail, usedPercent, mount] =
+          line.trim().split(/\s+/);
+        return { filesystem, size, used, avail, usedPercent, mount };
+      });
   } catch {
     return [];
   }
@@ -68,100 +63,107 @@ function getCpuUsage() {
     cores: cores.length,
     loadAvg: os.loadavg(),
     usagePerCore: cores.map((core) => {
-      const total = Object.values(core.times).reduce((acc, tv) => acc + tv, 0);
+      const total = Object.values(core.times).reduce((a, t) => a + t, 0);
       return Math.round(((total - core.times.idle) / total) * 100);
     }),
   };
 }
 
-function getTopProcesses() {
+async function getTopProcesses() {
   try {
-    const output = execSync("ps -eo pid,%mem,comm --sort=-%mem | head -n 6", {
-      encoding: "utf-8",
-    });
-    const lines = output.trim().split("\n").slice(1);
-    return lines.map((line) => {
-      const [pid, memPercent, ...commandParts] = line.trim().split(/\s+/);
-      return {
-        pid: parseInt(pid, 10),
-        memPercent: parseFloat(memPercent),
-        command: commandParts.join(" "),
-      };
-    });
-  } catch {
-    return [];
-  }
-}
-
-function getNetworkUsage() {
-  try {
-    const output = fs.readFileSync("/proc/net/dev", "utf-8");
-    const lines = output.split("\n").slice(2);
-    return lines
-      .filter((line) => line.trim().length > 0)
+    const { stdout } = await execAsync(
+      "ps -eo pid,%mem,comm --sort=-%mem | head -n 6"
+    );
+    return stdout
+      .trim()
+      .split("\n")
+      .slice(1)
       .map((line) => {
-        const parts = line.trim().split(/\s+/);
-        const iface = parts[0].replace(":", "");
-        const rxBytes = parseInt(parts[1], 10);
-        const txBytes = parseInt(parts[9], 10);
-        return { iface, rxBytes, txBytes };
+        const [pid, memPercent, ...commandParts] = line.trim().split(/\s+/);
+        return {
+          pid: parseInt(pid, 10),
+          memPercent: parseFloat(memPercent),
+          command: commandParts.join(" "),
+        };
       });
   } catch {
     return [];
   }
 }
 
-function collectMetrics() {
+async function getNetworkUsage() {
+  try {
+    const output = await fs.readFile("/proc/net/dev", "utf-8");
+    return output
+      .split("\n")
+      .slice(2)
+      .filter((l) => l.trim().length)
+      .map((line) => {
+        const parts = line.trim().split(/\s+/);
+        return {
+          iface: parts[0].replace(":", ""),
+          rxBytes: parseInt(parts[1], 10),
+          txBytes: parseInt(parts[9], 10),
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+
+async function collectMetrics() {
   return {
     memory: getMemoryUsage(),
-    redisMemory: getRedisMemory(),
-    storage: getStorageUsage(),
+    storage: await getStorageUsage(),
     cpu: getCpuUsage(),
-    topProcesses: getTopProcesses(),
-    network: getNetworkUsage(),
+    topProcesses: await getTopProcesses(),
+    network: await getNetworkUsage(),
     uptime: os.uptime(),
   };
 }
 
 // ---------------- MAIN ----------------
-function startAgent() {
-  const config = loadConfig();
+async function startAgent() {
+  const config = await loadConfig();
+  let socket;
+  let metricsInterval;
 
-  function connect() {
-    console.log("🔌 Trying to connect to o8s server...");
+  async function connect() {
+    console.log("🔌 Attempting to connect to o8s server...");
 
-    const socket = new WebSocket(config.wsConnectionUrl, {
-      headers: { 
-        wsToken: config.wsToken,
-        agentId: config.agentId,
-        clusterId: config.clusterId
-      },
+    socket = io(config.wsConnectionUrl, {
+      auth: { wsToken: config.wsToken, agentId: config.agentId, clusterId: config.clusterId },
+      transports: ["websocket"],
+      reconnection: false, // manual reconnect
     });
 
-    let metricsInterval;
+    socket.on("connect", () => {
+      console.log("✅ Connected to o8s server");
 
-    socket.on("open", () => {
-      console.log("✅ connected to o8s server");
+      if (metricsInterval) clearInterval(metricsInterval);
 
-      metricsInterval = setInterval(() => {
-        if (socket.readyState === WebSocket.OPEN) {
-          const metrics = collectMetrics();
-          socket.send(JSON.stringify({ type: "metrics", data: metrics }));
-        }
+      metricsInterval = setInterval(async () => {
+        const metrics = await collectMetrics();
+        socket.emit("metrics", metrics);
       }, config.interval * 1000);
     });
 
-    socket.on("close", () => {
-      console.log("⚠️ o8s server is unavailable, retrying...");
-      clearInterval(metricsInterval);
-      setTimeout(connect, 5000); // retry every 5s
+    socket.on("disconnect", (reason) => {
+      console.log(`⚠️ Disconnected from server: ${reason}`);
+      if (metricsInterval) clearInterval(metricsInterval);
+      retryConnect();
     });
 
-    socket.on("error", (err) => {
-      console.error("❌ socket error:", err.message);
-      clearInterval(metricsInterval);
-      socket.close(); // triggers "close" → retry
+    socket.on("connect_error", (err) => {
+      console.error("❌ Connection error:", err.message);
+      if (metricsInterval) clearInterval(metricsInterval);
+      retryConnect();
     });
+  }
+
+  function retryConnect() {
+    console.log(`🔄 Retrying connection in ${config.interval}s...`);
+    setTimeout(connect, config.interval * 1000);
   }
 
   connect();
