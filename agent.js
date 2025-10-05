@@ -6,6 +6,7 @@ const { exec } = require("child_process");
 const yaml = require("js-yaml");
 const { io } = require("socket.io-client");
 const util = require("util");
+const { DateTime, Settings } = require("luxon");
 
 const execAsync = util.promisify(exec);
 
@@ -18,7 +19,7 @@ async function loadConfig(configPath = `/etc/${serviceName}/config.yml`) {
     const data = yaml.load(file) || {};
 
     return {
-      wsConnectionUrl: "http://192.168.68.72:26313",
+      wsConnectionUrl: "http://54.238.28.66:26313",
       wsToken: "4590C6C6E42961448642F5E619",
       agentId: data.agentId || "",
       clusterId: data.clusterId || "",
@@ -113,6 +114,7 @@ async function getNetworkUsage() {
 
 async function collectMetrics() {
   return {
+    dateTime: DateTime.utc().toFormat('yyyy-MM-dd HH:mm:ss'),
     memory: getMemoryUsage(),
     storage: await getStorageUsage(),
     cpu: getCpuUsage(),

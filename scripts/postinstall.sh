@@ -11,7 +11,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
     cat <<EOF > "$CONFIG_FILE"
 clusterId:
 agentId:
-interval: 30
+interval: 10
 EOF
     echo "✅ Default config created at $CONFIG_FILE"
 fi
