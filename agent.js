@@ -6,7 +6,7 @@ const { exec } = require("child_process");
 const yaml = require("js-yaml");
 const { io } = require("socket.io-client");
 const util = require("util");
-const { DateTime, Settings } = require("luxon");
+const { DateTime } = require("luxon");
 
 const execAsync = util.promisify(exec);
 
@@ -139,9 +139,8 @@ async function startAgent() {
       reconnection: false, // manual reconnect
     });
 
-    socket.on("connect", () => {
+    socket.on("connect", async () => {
       console.log("✅ Connected to o8s server");
-
       if (metricsInterval) clearInterval(metricsInterval);
 
       metricsInterval = setInterval(async () => {
