@@ -49,8 +49,9 @@ async function getStorageUsage() {
       .split("\n")
       .slice(1)
       .map((line) => {
-        const [filesystem, size, used, avail, usedPercent, mount] =
-          line.trim().split(/\s+/);
+        const [filesystem, size, used, avail, usedPercent, mount] = line
+          .trim()
+          .split(/\s+/);
         return { filesystem, size, used, avail, usedPercent, mount };
       });
   } catch {
@@ -114,7 +115,7 @@ async function getNetworkUsage() {
 
 async function collectMetrics() {
   return {
-    dateTime: DateTime.utc().toFormat('yyyy-MM-dd HH:mm:ss'),
+    dateTime: DateTime.utc().toFormat("yyyy-MM-dd HH:mm:ss"),
     memory: getMemoryUsage(),
     storage: await getStorageUsage(),
     cpu: getCpuUsage(),
@@ -134,15 +135,30 @@ async function startAgent() {
     console.log("🔌 Attempting to connect to o8s server...");
 
     socket = io(config.wsConnectionUrl, {
-      auth: { wsToken: config.wsToken, agentId: config.agentId, clusterId: config.clusterId },
+      auth: {
+        wsToken: config.wsToken,
+        agentId: config.agentId,
+        clusterId: config.clusterId,
+      },
       transports: ["websocket"],
-      reconnection: false, // manual reconnect
+      reconnection: false, // we'll manually handle reconnection
     });
 
     socket.on("connect", async () => {
       console.log("✅ Connected to o8s server");
+
       if (metricsInterval) clearInterval(metricsInterval);
 
+      // ✅ Emit immediately on first connection
+      try {
+        const metrics = await collectMetrics();
+        socket.emit("metrics", metrics);
+        console.log("📤 Sent initial metrics immediately");
+      } catch (err) {
+        console.error("❌ Failed to send initial metrics:", err.message);
+      }
+
+      // ⏱ Continue sending metrics on interval
       metricsInterval = setInterval(async () => {
         const metrics = await collectMetrics();
         socket.emit("metrics", metrics);
