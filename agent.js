@@ -113,8 +113,10 @@ async function getNetworkUsage() {
   }
 }
 
-async function collectMetrics() {
+async function collectMetrics(config) {
   return {
+    agentId: config.agentId,
+    clusterId: config.clusterId,
     dateTime: DateTime.utc().toFormat("yyyy-MM-dd HH:mm:ss"),
     memory: getMemoryUsage(),
     storage: await getStorageUsage(),
@@ -151,7 +153,7 @@ async function startAgent() {
 
       // ✅ Emit immediately on first connection
       try {
-        const metrics = await collectMetrics();
+        const metrics = await collectMetrics(config);
         socket.emit("metrics", metrics);
         console.log("📤 Sent initial metrics immediately");
       } catch (err) {
