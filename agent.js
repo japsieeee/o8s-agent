@@ -167,6 +167,22 @@ async function startAgent() {
       }, config.interval * 1000);
     });
 
+    const rebootAction = "reboot";
+    const metricsRoom = `${rebootAction}:${socket.agentInformation.clusterId}:${socket.agentInformation.id}`;
+    socket.on(metricsRoom, () => {
+      exec("sudo reboot", (error, stdout, stderr) => {
+        if (error) {
+          console.error(`❌ Reboot error: ${error.message}`);
+          return;
+        }
+        if (stderr) {
+          console.error(`❌ Reboot stderr: ${stderr}`);
+          return;
+        }
+        console.log(`✅ Reboot stdout: ${stdout}`);
+      });
+    });
+
     socket.on("disconnect", (reason) => {
       console.log(`⚠️ Disconnected from server: ${reason}`);
       if (metricsInterval) clearInterval(metricsInterval);
