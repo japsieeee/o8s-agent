@@ -141,7 +141,7 @@ async function getPm2Services() {
 
 // ✅ NEW: PM2 ACTIONS
 async function handlePm2Action(action, serviceName) {
-  const validActions = ["restart", "stop", "rollback"];
+  const validActions = ["restart", "start", "stop", "rollback"];
   if (!validActions.includes(action)) {
     throw new Error(`Invalid PM2 action: ${action}`);
   }
