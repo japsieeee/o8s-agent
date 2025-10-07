@@ -154,6 +154,9 @@ async function handlePm2Action(action, serviceName) {
 
     let command;
     switch (action) {
+      case "start":
+        command = `pm2 start ${serviceName}`;
+        break;
       case "restart":
         command = `pm2 restart ${serviceName}`;
         break;
@@ -161,8 +164,7 @@ async function handlePm2Action(action, serviceName) {
         command = `pm2 stop ${serviceName}`;
         break;
       case "rollback":
-        // PM2 rollback = delete + resurrect (simple fallback)
-        command = `pm2 delete ${serviceName} && pm2 resurrect`;
+        // command = `pm2 delete ${serviceName} && pm2 resurrect`;
         break;
     }
 
@@ -234,7 +236,8 @@ async function startAgent() {
       console.log(`⚙️ Received PM2 action: ${action} on ${serviceName}`);
 
       const result = await handlePm2Action(action, serviceName);
-      socket.emit(`pm2-action-result:${config.clusterId}:${config.agentId}`, {
+
+      socket.emit(`pm2-action-result`, {
         ...result,
         serviceName,
         action,
