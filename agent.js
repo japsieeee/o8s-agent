@@ -232,6 +232,7 @@ async function startAgent() {
 
     // 🌀 PM2 ACTION HANDLER
     const pm2ActionEvent = `pm2-action:${config.clusterId}:${config.agentId}`;
+    console.log("PM2 action event: ", pm2ActionEvent);
     socket.on(pm2ActionEvent, async (payload) => {
       const { serviceName, action } = payload || {};
       console.log(`⚙️ Received PM2 action: ${action} on ${serviceName}`);
