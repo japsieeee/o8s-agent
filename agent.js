@@ -242,14 +242,14 @@ async function startAgent() {
         config.pm2EcosystemPath
       );
 
-      // socket.emit(`pm2-action-result`, {
-      //   ...result,
-      //   serviceName,
-      //   action,
-      //   agentId: config.agentId,
-      //   clusterId: config.clusterId,
-      //   timestamp: DateTime.utc().toISO(),
-      // });
+      socket.emit(`pm2-action-result`, {
+        ...result,
+        serviceName,
+        action,
+        agentId: config.agentId,
+        clusterId: config.clusterId,
+        timestamp: DateTime.utc().toISO(),
+      });
     });
 
     // 🌀 REBOOT HANDLER
