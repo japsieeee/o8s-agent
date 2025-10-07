@@ -113,6 +113,67 @@ async function getNetworkUsage() {
   }
 }
 
+// ✅ NEW: PM2 Metrics
+async function getPm2Services() {
+  try {
+    const { stdout } = await execAsync("pm2 jlist");
+    const services = JSON.parse(stdout);
+
+    return services.map((proc) => ({
+      name: proc.name,
+      pid: proc.pid,
+      status: proc.pm2_env?.status || "unknown",
+      cpu: proc.monit?.cpu ?? null,
+      memory: proc.monit?.memory ?? null,
+      uptime: proc.pm2_env?.pm_uptime
+        ? DateTime.fromMillis(proc.pm2_env.pm_uptime).toISO()
+        : null,
+      restartCount: proc.pm2_env?.restart_time ?? 0,
+    }));
+  } catch (err) {
+    if (err.message.includes("pm2: not found") || err.code === 127) {
+      return undefined;
+    }
+    console.warn("⚠️ Failed to fetch PM2 processes:", err.message);
+    return undefined;
+  }
+}
+
+// ✅ NEW: PM2 ACTIONS
+async function handlePm2Action(action, serviceName) {
+  const validActions = ["restart", "stop", "rollback"];
+  if (!validActions.includes(action)) {
+    throw new Error(`Invalid PM2 action: ${action}`);
+  }
+
+  try {
+    // Check if PM2 exists
+    await execAsync("pm2 -v").catch(() => {
+      throw new Error("PM2 not installed on this system");
+    });
+
+    let command;
+    switch (action) {
+      case "restart":
+        command = `pm2 restart ${serviceName}`;
+        break;
+      case "stop":
+        command = `pm2 stop ${serviceName}`;
+        break;
+      case "rollback":
+        // PM2 rollback = delete + resurrect (simple fallback)
+        command = `pm2 delete ${serviceName} && pm2 resurrect`;
+        break;
+    }
+
+    const { stdout } = await execAsync(command);
+    return { success: true, output: stdout };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+// ---------------- COLLECT ----------------
 async function collectMetrics(config) {
   return {
     agentId: config.agentId,
@@ -124,6 +185,7 @@ async function collectMetrics(config) {
     topProcesses: await getTopProcesses(),
     network: await getNetworkUsage(),
     uptime: os.uptime(),
+    pm2Services: await getPm2Services(),
   };
 }
 
@@ -143,7 +205,7 @@ async function startAgent() {
         clusterId: config.clusterId,
       },
       transports: ["websocket"],
-      reconnection: false, // we'll manually handle reconnection
+      reconnection: false,
     });
 
     socket.on("connect", async () => {
@@ -151,7 +213,6 @@ async function startAgent() {
 
       if (metricsInterval) clearInterval(metricsInterval);
 
-      // ✅ Emit immediately on first connection
       try {
         const metrics = await collectMetrics(config);
         socket.emit("metrics", metrics);
@@ -160,25 +221,35 @@ async function startAgent() {
         console.error("❌ Failed to send initial metrics:", err.message);
       }
 
-      // ⏱ Continue sending metrics on interval
       metricsInterval = setInterval(async () => {
-        const metrics = await collectMetrics();
+        const metrics = await collectMetrics(config);
         socket.emit("metrics", metrics);
       }, config.interval * 1000);
     });
 
-    const rebootAction = "reboot";
-    const metricsRoom = `${rebootAction}:${socket.agentInformation.clusterId}:${socket.agentInformation.id}`;
-    socket.on(metricsRoom, () => {
+    // 🌀 PM2 ACTION HANDLER
+    const pm2ActionEvent = `pm2-action:${config.clusterId}:${config.agentId}`;
+    socket.on(pm2ActionEvent, async (payload) => {
+      const { serviceName, action } = payload || {};
+      console.log(`⚙️ Received PM2 action: ${action} on ${serviceName}`);
+
+      const result = await handlePm2Action(action, serviceName);
+      socket.emit(`pm2-action-result:${config.clusterId}:${config.agentId}`, {
+        ...result,
+        serviceName,
+        action,
+        agentId: config.agentId,
+        clusterId: config.clusterId,
+        timestamp: DateTime.utc().toISO(),
+      });
+    });
+
+    // 🌀 REBOOT HANDLER
+    const rebootEvent = `reboot:${config.clusterId}:${config.agentId}`;
+    socket.on(rebootEvent, () => {
       exec("sudo reboot", (error, stdout, stderr) => {
-        if (error) {
-          console.error(`❌ Reboot error: ${error.message}`);
-          return;
-        }
-        if (stderr) {
-          console.error(`❌ Reboot stderr: ${stderr}`);
-          return;
-        }
+        if (error) return console.error(`❌ Reboot error: ${error.message}`);
+        if (stderr) return console.error(`❌ Reboot stderr: ${stderr}`);
         console.log(`✅ Reboot stdout: ${stdout}`);
       });
     });
