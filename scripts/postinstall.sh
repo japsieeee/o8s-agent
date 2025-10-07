@@ -12,6 +12,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
 clusterId:
 agentId:
 interval: 10
+# pm2EcosystemPath: /home
 EOF
     echo "✅ Default config created at $CONFIG_FILE"
 fi

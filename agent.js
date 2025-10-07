@@ -24,6 +24,7 @@ async function loadConfig(configPath = `/etc/${serviceName}/config.yml`) {
       agentId: data.agentId || "",
       clusterId: data.clusterId || "",
       interval: data.interval || 30, // seconds
+      pm2EcosystemPath: data.pm2EcosystemPath || "",
     };
   } catch (err) {
     console.error("❌ Failed to load config:", err.message);
@@ -140,7 +141,7 @@ async function getPm2Services() {
 }
 
 // ✅ NEW: PM2 ACTIONS
-async function handlePm2Action(action, serviceName) {
+async function handlePm2Action(action, serviceName, ecosystemPath) {
   const validActions = ["restart", "start", "stop", "rollback"];
   if (!validActions.includes(action)) {
     throw new Error(`Invalid PM2 action: ${action}`);
@@ -155,7 +156,7 @@ async function handlePm2Action(action, serviceName) {
     let command;
     switch (action) {
       case "start":
-        command = `pm2 start ${serviceName}`;
+        command = `pm2 start ${ecosystemPath} --only ${serviceName}`;
         break;
       case "restart":
         command = `pm2 restart ${serviceName}`;
@@ -235,7 +236,11 @@ async function startAgent() {
       const { serviceName, action } = payload || {};
       console.log(`⚙️ Received PM2 action: ${action} on ${serviceName}`);
 
-      const result = await handlePm2Action(action, serviceName);
+      const result = await handlePm2Action(
+        action,
+        serviceName,
+        config.pm2EcosystemPath
+      );
 
       socket.emit(`pm2-action-result`, {
         ...result,
