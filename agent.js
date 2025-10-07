@@ -142,10 +142,10 @@ async function getPm2Services() {
 
 // ✅ NEW: PM2 ACTIONS
 async function handlePm2Action(action, serviceName, ecosystemPath) {
-  const validActions = ["restart", "start", "stop", "rollback"];
-  if (!validActions.includes(action)) {
-    throw new Error(`Invalid PM2 action: ${action}`);
-  }
+  // const validActions = ["restart", "start", "stop", "rollback"];
+  // if (!validActions.includes(action)) {
+  //   throw new Error(`Invalid PM2 action: ${action}`);
+  // }
 
   try {
     // Check if PM2 exists
@@ -242,14 +242,14 @@ async function startAgent() {
         config.pm2EcosystemPath
       );
 
-      socket.emit(`pm2-action-result`, {
-        ...result,
-        serviceName,
-        action,
-        agentId: config.agentId,
-        clusterId: config.clusterId,
-        timestamp: DateTime.utc().toISO(),
-      });
+      // socket.emit(`pm2-action-result`, {
+      //   ...result,
+      //   serviceName,
+      //   action,
+      //   agentId: config.agentId,
+      //   clusterId: config.clusterId,
+      //   timestamp: DateTime.utc().toISO(),
+      // });
     });
 
     // 🌀 REBOOT HANDLER
