@@ -25,6 +25,7 @@ async function loadConfig(configPath = `/etc/${serviceName}/config.yml`) {
       clusterId: data.clusterId || "",
       interval: data.interval || 30, // seconds
       pm2EcosystemPath: data.pm2EcosystemPath || "",
+      pm2DeploymentScriptRootPath: data.pm2DeploymentScriptRootPath || "",
     };
   } catch (err) {
     console.error("❌ Failed to load config:", err.message);
@@ -140,15 +141,18 @@ async function getPm2Services() {
   }
 }
 
-// ✅ NEW: PM2 ACTIONS
-async function handlePm2Action(action, serviceName, ecosystemPath) {
-  // const validActions = ["restart", "start", "stop", "rollback"];
-  // if (!validActions.includes(action)) {
-  //   throw new Error(`Invalid PM2 action: ${action}`);
-  // }
-
+async function handlePm2Action(
+  action,
+  serviceName,
+  ecosystemPath,
+  pm2DeploymentScriptRootPath
+) {
   try {
-    // Check if PM2 exists
+    const validActions = ["restart", "start", "stop", "rollback", "deploy"];
+    if (!validActions.includes(action)) {
+      throw new Error(`Invalid PM2 action: ${action}`);
+    }
+
     await execAsync("pm2 -v").catch(() => {
       throw new Error("PM2 not installed on this system");
     });
@@ -164,8 +168,11 @@ async function handlePm2Action(action, serviceName, ecosystemPath) {
       case "stop":
         command = `pm2 stop ${serviceName}`;
         break;
+      case "deploy":
+        command = `bash ${pm2DeploymentScriptRootPath}/${serviceName}-deploy.sh`;
+        break;
       case "rollback":
-        // command = `pm2 delete ${serviceName} && pm2 resurrect`;
+        command = `bash ${pm2DeploymentScriptRootPath}/${serviceName}-rollback.sh`;
         break;
     }
 
@@ -219,7 +226,6 @@ async function startAgent() {
       try {
         const metrics = await collectMetrics(config);
         socket.emit("metrics", metrics);
-        console.log("📤 Sent initial metrics immediately");
       } catch (err) {
         console.error("❌ Failed to send initial metrics:", err.message);
       }
@@ -235,12 +241,12 @@ async function startAgent() {
     console.log("PM2 action event: ", pm2ActionEvent);
     socket.on(pm2ActionEvent, async (payload) => {
       const { serviceName, action } = payload || {};
-      console.log(`⚙️ Received PM2 action: ${action} on ${serviceName}`);
 
       const result = await handlePm2Action(
         action,
         serviceName,
-        config.pm2EcosystemPath
+        config.pm2EcosystemPath,
+        config.pm2DeploymentScriptRootPath
       );
 
       socket.emit(`pm2-action-result`, {
