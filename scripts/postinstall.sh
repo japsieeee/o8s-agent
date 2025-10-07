@@ -11,8 +11,9 @@ if [ ! -f "$CONFIG_FILE" ]; then
     cat <<EOF > "$CONFIG_FILE"
 clusterId:
 agentId:
-interval: 10
+interval: 30
 # pm2EcosystemPath: /home
+# pm2DeploymentScriptRootPath: /home
 EOF
     echo "✅ Default config created at $CONFIG_FILE"
 fi
