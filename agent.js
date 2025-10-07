@@ -148,11 +148,6 @@ async function handlePm2Action(
   pm2DeploymentScriptRootPath
 ) {
   try {
-    const validActions = ["restart", "start", "stop", "rollback", "deploy"];
-    if (!validActions.includes(action)) {
-      throw new Error(`Invalid PM2 action: ${action}`);
-    }
-
     await execAsync("pm2 -v").catch(() => {
       throw new Error("PM2 not installed on this system");
     });
@@ -169,10 +164,10 @@ async function handlePm2Action(
         command = `pm2 stop ${serviceName}`;
         break;
       case "deploy":
-        command = `bash ${pm2DeploymentScriptRootPath}/${serviceName}-deploy.sh`;
+        command = `cd ${pm2DeploymentScriptRootPath} && bash ${serviceName}-deploy.sh`;
         break;
       case "rollback":
-        command = `bash ${pm2DeploymentScriptRootPath}/${serviceName}-rollback.sh`;
+        command = `cd ${pm2DeploymentScriptRootPath} && bash ${serviceName}-rollback.sh`;
         break;
     }
 
