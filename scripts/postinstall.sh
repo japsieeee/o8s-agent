@@ -26,7 +26,7 @@ if [ ! -f "$PM2_ECOSYSTEM_CONFIG_FILE" ]; then
     cat <<EOF > "$PM2_ECOSYSTEM_CONFIG_FILE"
 # edit your ecosystem of pm2 config here
 EOF
-    echo "✅ Default config created at $PM2_ECOSYSTEM_CONFIG_FILE"
+    echo "✅ Default pm2 ecosystem created at $PM2_ECOSYSTEM_CONFIG_FILE"
 fi
 
 # Reload systemd and start service
