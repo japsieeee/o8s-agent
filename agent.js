@@ -203,11 +203,13 @@ async function getPm2Services(config) {
 async function handlePm2Action(
   action,
   serviceName,
-  ecosystemConfig,
-  ecosystemPath,
+  configFile,
+  pm2EcosystemPath,
   pm2ScriptsRootDir
 ) {
   try {
+    console.log('pm2 ecosystem path: ', pm2EcosystemPath);
+    
     await execAsync("pm2 -v").catch(() => {
       throw new Error("PM2 not installed on this system");
     });
@@ -215,27 +217,27 @@ async function handlePm2Action(
     let command;
     switch (action) {
       case "save-config": {
-        if (!ecosystemConfig || !ecosystemPath) {
+        if (!configFile || !pm2EcosystemPath) {
           throw new Error("Missing ecosystem config content or file path");
         }
 
         // Write the new config to disk
-        await fs.writeFile(ecosystemPath, ecosystemConfig, "utf-8");
+        await fs.writeFile(pm2EcosystemPath, configFile, "utf-8");
 
         // Optional sanity check: read back and confirm
-        const verifyContent = await fs.readFile(ecosystemPath, "utf-8");
+        const verifyContent = await fs.readFile(pm2EcosystemPath, "utf-8");
         if (!verifyContent.includes("module.exports")) {
           throw new Error("Ecosystem config may be invalid or incomplete");
         }
 
         return {
           success: true,
-          message: `✅ Ecosystem config updated successfully at ${ecosystemPath}`,
+          message: `✅ Ecosystem config updated successfully at ${pm2EcosystemPath}`,
         };
       }
 
       case "start":
-        command = `pm2 start ${ecosystemPath} --only ${serviceName}`;
+        command = `pm2 start ${pm2EcosystemPath} --only ${serviceName}`;
         break;
       case "restart":
         command = `pm2 restart ${serviceName}`;
@@ -318,12 +320,12 @@ async function startAgent() {
     const pm2ActionEvent = `pm2-action:${config.clusterId}:${config.agentId}`;
     console.log("PM2 action event: ", pm2ActionEvent);
     socket.on(pm2ActionEvent, async (payload) => {
-      const { serviceName, action, ecosystemConfig } = payload || {};
+      const { serviceName, action, configFile } = payload || {};
 
       const result = await handlePm2Action(
         action,
         serviceName,
-        ecosystemConfig,
+        configFile,
         config.pm2EcosystemPath,
         config.pm2ScriptsRootDir
       );
