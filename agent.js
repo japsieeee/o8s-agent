@@ -25,7 +25,7 @@ async function loadConfig(configPath = `/etc/${serviceName}/config.yml`) {
       clusterId: data.clusterId || "",
       interval: data.interval || 30, // seconds
       pm2EcosystemPath: data.pm2EcosystemPath || "",
-      pm2DeploymentScriptRootPath: data.pm2DeploymentScriptRootPath || "",
+      pm2ScriptsRootDir: data.pm2ScriptsRootDir || "",
     };
   } catch (err) {
     console.error("❌ Failed to load config:", err.message);
@@ -115,28 +115,64 @@ async function getNetworkUsage() {
   }
 }
 
-// ✅ NEW: PM2 Metrics
-async function getPm2Services() {
+async function getPm2Services(config) {
   try {
-    const { stdout } = await execAsync("pm2 jlist");
-    const services = JSON.parse(stdout);
-
-    return services.map((proc) => ({
-      name: proc.name,
-      pid: proc.pid,
-      status: proc.pm2_env?.status || "unknown",
-      cpu: proc.monit?.cpu ?? null,
-      memory: proc.monit?.memory ?? null,
-      uptime: proc.pm2_env?.pm_uptime
-        ? DateTime.fromMillis(proc.pm2_env.pm_uptime).toISO()
-        : null,
-      restartCount: proc.pm2_env?.restart_time ?? 0,
-    }));
-  } catch (err) {
-    if (err.message.includes("pm2: not found") || err.code === 127) {
-      return undefined;
+    // 1️⃣ Load ecosystem config
+    const ecosystemPath = path.resolve(config.pm2EcosystemPath);
+    if (!fs.existsSync(ecosystemPath)) {
+      throw new Error(`Ecosystem config not found at: ${ecosystemPath}`);
     }
-    console.warn("⚠️ Failed to fetch PM2 processes:", err.message);
+
+    // Read the raw text of the file (keep comments, vars, everything)
+    const configFileRaw = fs.readFileSync(ecosystemPath, "utf8");
+
+    // Try to dynamically import it for structured app info
+    let apps = [];
+    try {
+      const ecosystemModule = await import(pathToFileURL(ecosystemPath).href);
+      const configFile =
+        ecosystemModule.default || ecosystemModule || {};
+      apps = configFile.apps || [];
+    } catch (parseErr) {
+      console.warn("⚠️ Failed to import config file, returning raw content only:", parseErr.message);
+    }
+
+    // 2️⃣ Get PM2 running services
+    let running = [];
+    try {
+      const { stdout } = await execAsync("pm2 jlist");
+      running = JSON.parse(stdout);
+    } catch (pm2err) {
+      if (pm2err.message.includes("pm2: not found") || pm2err.code === 127) {
+        console.warn("⚠️ PM2 not found on system — showing config only.");
+      } else {
+        console.warn("⚠️ Failed to fetch PM2 processes:", pm2err.message);
+      }
+    }
+
+    // 3️⃣ Merge: Ecosystem apps + PM2 running data
+    const services = apps.map((app) => {
+      const match = running.find((proc) => proc.name === app.name);
+      return {
+        name: app.name,
+        pid: match?.pid ?? null,
+        status: match?.pm2_env?.status || "stopped",
+        cpu: match?.monit?.cpu ?? null,
+        memory: match?.monit?.memory ?? null,
+        uptime: match?.pm2_env?.pm_uptime
+          ? DateTime.fromMillis(match.pm2_env.pm_uptime).toISO()
+          : null,
+        restartCount: match?.pm2_env?.restart_time ?? 0,
+      };
+    });
+
+    // ✅ Return both structured and full raw file
+    return {
+      services,
+      configFile: JSON.stringify(configFileRaw), // escaped raw file text
+    };
+  } catch (err) {
+    console.error("💥 Error in getPm2Services:", err.message);
     return undefined;
   }
 }
@@ -144,8 +180,9 @@ async function getPm2Services() {
 async function handlePm2Action(
   action,
   serviceName,
+  ecosystemConfig,
   ecosystemPath,
-  pm2DeploymentScriptRootPath
+  pm2ScriptsRootDir
 ) {
   try {
     await execAsync("pm2 -v").catch(() => {
@@ -154,6 +191,26 @@ async function handlePm2Action(
 
     let command;
     switch (action) {
+      case "save-config": {
+        if (!ecosystemConfig || !ecosystemPath) {
+          throw new Error("Missing ecosystem config content or file path");
+        }
+
+        // Write the new config to disk
+        await fs.writeFile(ecosystemPath, ecosystemConfig, "utf-8");
+
+        // Optional sanity check: read back and confirm
+        const verifyContent = await fs.readFile(ecosystemPath, "utf-8");
+        if (!verifyContent.includes("module.exports")) {
+          throw new Error("Ecosystem config may be invalid or incomplete");
+        }
+
+        return {
+          success: true,
+          message: `✅ Ecosystem config updated successfully at ${ecosystemPath}`,
+        };
+      }
+
       case "start":
         command = `pm2 start ${ecosystemPath} --only ${serviceName}`;
         break;
@@ -164,10 +221,13 @@ async function handlePm2Action(
         command = `pm2 stop ${serviceName}`;
         break;
       case "deploy":
-        command = `cd ${pm2DeploymentScriptRootPath} && bash ${serviceName}-deploy.sh`;
+        command = `cd ${pm2ScriptsRootDir} && bash ${serviceName}-deploy.sh`;
         break;
       case "rollback":
-        command = `cd ${pm2DeploymentScriptRootPath} && bash ${serviceName}-rollback.sh`;
+        command = `cd ${pm2ScriptsRootDir} && bash ${serviceName}-rollback.sh`;
+        break;
+      default:
+        // nothing here
         break;
     }
 
@@ -190,7 +250,7 @@ async function collectMetrics(config) {
     topProcesses: await getTopProcesses(),
     network: await getNetworkUsage(),
     uptime: os.uptime(),
-    pm2Services: await getPm2Services(),
+    pm2Services: await getPm2Services(config),
   };
 }
 
@@ -235,13 +295,14 @@ async function startAgent() {
     const pm2ActionEvent = `pm2-action:${config.clusterId}:${config.agentId}`;
     console.log("PM2 action event: ", pm2ActionEvent);
     socket.on(pm2ActionEvent, async (payload) => {
-      const { serviceName, action } = payload || {};
+      const { serviceName, action, ecosystemConfig } = payload || {};
 
       const result = await handlePm2Action(
         action,
         serviceName,
+        ecosystemConfig,
         config.pm2EcosystemPath,
-        config.pm2DeploymentScriptRootPath
+        config.pm2ScriptsRootDir
       );
 
       socket.emit(`pm2-action-result`, {
