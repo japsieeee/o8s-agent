@@ -6,6 +6,7 @@ const { exec } = require("child_process");
 const yaml = require("js-yaml");
 const { io } = require("socket.io-client");
 const util = require("util");
+const path = require("path");
 const { DateTime } = require("luxon");
 
 const execAsync = util.promisify(exec);
@@ -117,44 +118,64 @@ async function getNetworkUsage() {
 
 async function getPm2Services(config) {
   try {
-    // 1️⃣ Load ecosystem config
-    const ecosystemPath = path.resolve(config.pm2EcosystemPath);
-    if (!fs.existsSync(ecosystemPath)) {
+    const ecosystemPath = path.resolve(config.pm2EcosystemPath || "");
+
+    if (!ecosystemPath) throw new Error("Missing pm2EcosystemPath in config.yml");
+
+    // ✅ Check if the ecosystem file exists
+    try {
+      await fs.access(ecosystemPath);
+    } catch {
       throw new Error(`Ecosystem config not found at: ${ecosystemPath}`);
     }
 
-    // Read the raw text of the file (keep comments, vars, everything)
-    const configFileRaw = fs.readFileSync(ecosystemPath, "utf8");
+    // ✅ Read full raw file
+    const configFileRaw = await fs.readFile(ecosystemPath, "utf8");
 
-    // Try to dynamically import it for structured app info
+    // ✅ Parse structured app data
     let apps = [];
     try {
-      const ecosystemModule = await import(pathToFileURL(ecosystemPath).href);
-      const configFile =
-        ecosystemModule.default || ecosystemModule || {};
-      apps = configFile.apps || [];
+      const ext = path.extname(ecosystemPath).toLowerCase();
+      let configFile = {};
+
+      if (ext === ".js") {
+        // Reload dynamic configs by clearing require cache
+        delete require.cache[require.resolve(ecosystemPath)];
+        const loaded = require(ecosystemPath);
+        configFile = loaded?.default || loaded || {};
+      } else if (ext === ".json") {
+        configFile = JSON.parse(configFileRaw);
+      } else if (ext === ".yml" || ext === ".yaml") {
+        configFile = yaml.load(configFileRaw);
+      }
+
+      apps = Array.isArray(configFile.apps) ? configFile.apps : [];
     } catch (parseErr) {
-      console.warn("⚠️ Failed to import config file, returning raw content only:", parseErr.message);
+      console.warn(
+        `⚠️ Failed to parse ecosystem config (${ecosystemPath}):`,
+        parseErr.message
+      );
     }
 
-    // 2️⃣ Get PM2 running services
+    // ✅ Get PM2 process list
     let running = [];
     try {
       const { stdout } = await execAsync("pm2 jlist");
       running = JSON.parse(stdout);
     } catch (pm2err) {
       if (pm2err.message.includes("pm2: not found") || pm2err.code === 127) {
-        console.warn("⚠️ PM2 not found on system — showing config only.");
+        console.warn("⚠️ PM2 not installed — returning config only.");
       } else {
         console.warn("⚠️ Failed to fetch PM2 processes:", pm2err.message);
       }
     }
 
-    // 3️⃣ Merge: Ecosystem apps + PM2 running data
+    // ✅ Merge ecosystem apps with PM2 process data
     const services = apps.map((app) => {
       const match = running.find((proc) => proc.name === app.name);
       return {
         name: app.name,
+        script: app.script || null,
         pid: match?.pid ?? null,
         status: match?.pm2_env?.status || "stopped",
         cpu: match?.monit?.cpu ?? null,
@@ -166,16 +187,18 @@ async function getPm2Services(config) {
       };
     });
 
-    // ✅ Return both structured and full raw file
+    // ✅ Always return a consistent shape
     return {
       services,
-      configFile: JSON.stringify(configFileRaw), // escaped raw file text
+      configFile: JSON.stringify(configFileRaw),
     };
   } catch (err) {
     console.error("💥 Error in getPm2Services:", err.message);
-    return undefined;
+    return { services: [], configFile: "" };
   }
 }
+
+
 
 async function handlePm2Action(
   action,
@@ -346,4 +369,10 @@ async function startAgent() {
   connect();
 }
 
-startAgent();
+if (require.main === module) {
+  // This runs when you execute `node agent.js` directly
+  startAgent();
+} else {
+  // This allows other scripts to import your functions
+  module.exports = { getPm2Services, handlePm2Action, collectMetrics };
+}
